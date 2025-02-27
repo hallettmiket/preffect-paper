@@ -1,0 +1,89 @@
+---
+title: "GDC_Count_Matrix_Processor.Rmd"
+author: "Eliseos Mucaki"
+date: "2023-09-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+DATAPATH <- "/path/to/third_party/gdc_download.CMI_BC_Only"
+
+# every file is in a different folder, so we need to find all TSV files within them 
+tsv_files <- list.files(path = DATAPATH, pattern = "\\.tsv$", recursive = TRUE, full.names = TRUE)
+```
+
+```{r}
+# now I want to read in each file, and make sure they're in the same gene order
+second_columns <- NULL
+count = 0
+
+# Loop through each TSV file
+for (file in tsv_files) {
+  # Read the TSV file
+  data <- read.table(file, sep = "\t", header = TRUE, stringsAsFactors = FALSE)
+  
+  # Check if the file has at least two columns
+  if (ncol(data) >= 2) {
+    # Extract the second column
+    this_column <- data[[2]]
+    
+    if (is.null(second_columns)) {
+      second_columns = this_column
+      count = count + 1
+      
+    } else {
+      if (identical(this_column, second_columns)) {
+        count = count + 1
+        
+      } else {
+        print("NO MATCH")
+      }
+    }
+  }
+}
+
+print (count) # 250m they're all the same
+
+```
+
+```{r}
+# they are the same. Lets now make a table from column 4.
+# stupidly, the filename doesn't tell me what sample is what file is from what sample
+# Load necessary libraries
+library(dplyr)
+
+# Read the first file and extract the first 4 columns
+first_file <- read.table(tsv_files[1], sep = "\t", header = TRUE, stringsAsFactors = FALSE)
+first_columns <- first_file[, 1:4]
+
+# List of other files
+other_files <- tsv_files[-1]
+                 
+# Initialize an empty data frame to store the result
+result <- data.frame()
+
+# Loop through other files and append the 4th column
+for (file_path in other_files) {
+  other_file <- read.table(file_path, sep = "\t", header = TRUE, stringsAsFactors = FALSE)
+  fourth_column <- other_file[, 4]
+  
+  if (nrow(result) == 0) {
+    # If empty, create the result data frame using the first column
+    result <- data.frame(fourth_column)
+  } else {
+    # If not empty, append the column to the result data frame
+    result <- cbind(result, fourth_column)
+  }
+}
+
+# Rename the columns in the result
+colnames(result) <- paste0("File", 1:length(other_files))
+
+# Combine the first columns and the appended columns
+final_table <- cbind(first_columns, result)
+
+write.table(final_table, "/path/to/third_party/gdc_download.CMI_BC_Only/MBC_CMI_Compiled_Counts.tsv")
+
+```

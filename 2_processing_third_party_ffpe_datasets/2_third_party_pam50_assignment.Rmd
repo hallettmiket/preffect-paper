@@ -1,0 +1,250 @@
+---
+title: "third_party_pam50_assignment"
+output: html_document
+date: "2024-06-05"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(genefu); library(tidyverse)
+# creates the 'pam50' variable; we didn't have to do this before, I wonder what changed
+data("pam50", package = "genefu")
+
+# The two BC datasets we don’t have PAM50 subtypes is “GSE47462” and the “Metastatic Breast Cancer Project” datasets
+# here, we add them using the same methods used for our DCIS dataset 
+# ER/PR/HER2 status for GSE47462 could be useful in evaluating subtype assignments.
+library(reticulate)
+#use_condaenv("ffpe_env_gpu_new", required = TRUE)
+library(anndata)
+
+# libraries we need
+library(sva); library(pamr); library(Rsubread); library(edgeR); library(DESeq2);
+
+#anndata <- import("anndata")
+source("~/repo/dcisproject/src/gene_sets.R")
+
+# path to files
+gse47462_path = "/path/to/third_party/GSE47462_third_party_ffpe/train/GSE47462_19K.EJM_Fixed.tau_1.h5ad"
+tmbc_path = "/path/to/third_party/CountMeIn_BC_only_third_party_ffpe/train/gdc_download.CMI_BC_Only_19K.genenamefix.tau_1.h5ad"
+
+# Read an AnnData file
+#adata_gse <- read_h5ad(gse47462_path)
+adata_tmbc <- read_h5ad(tmbc_path)
+
+```
+
+# lets look at the data, make sure formatting is okay
+```{r}
+
+# Access data
+#expression_matrix <- adata_gse$X
+#obs_metadata <- adata_gse$obs
+#var_metadata <- py_to_r(adata_gse$var)
+
+expression_matrix <- adata_tmbc$X
+obs_metadata <- adata_tmbc$obs
+var_metadata <- adata_tmbc$var
+
+print(obs_metadata)
+print(var_metadata)
+
+```
+Now we work towards getting VST normalization going on these datasets; it uses EdgeR/DeSeq2
+
+```{r}
+# for GSE dataset
+obs_metadata_framed <- data.frame(
+    batch = factor(obs_metadata$batch),
+    tissue = factor(obs_metadata$tissue)
+)
+
+design <- model.matrix(~ tissue, data = obs_metadata_framed)
+
+# code 
+DS <- DESeqDataSetFromMatrix(countData=round(t(expression_matrix)), 
+                             colData = obs_metadata_framed, 
+                             design = ~  tissue  )  
+
+# this was getting rid of too many PAM50 genes, cut out
+#keep <- (rowSums(counts(DS) >= 10)/ ncol(DS)) > 0.2
+#DS <- DS[keep,]
+
+DS <- estimateSizeFactors(DS)
+VST <- assay(vst(DS, blind = FALSE))
+
+```
+```{r}
+# for TMBC dataset
+obs_metadata_framed <- data.frame(
+    batch = factor(obs_metadata$batch)
+)
+
+# code 
+DS <- DESeqDataSetFromMatrix(countData=round(t(expression_matrix)), 
+                             colData = obs_metadata_framed, 
+                             design = ~  1  )  
+
+# this was getting rid of too many PAM50 genes, cut out
+#keep <- (rowSums(counts(DS) >= 10)/ ncol(DS)) > 0.2
+#DS <- DS[keep,]
+
+DS <- estimateSizeFactors(DS)
+VST <- assay(vst(DS, blind = FALSE))
+
+```
+
+
+And now we do the PAM50 designation
+
+Find PAM50 genes
+```{r}
+rownames(pam50$centroids)[which(rownames(pam50$centroids)=="CDCA1")]<-"NUF2"
+rownames(pam50$centroids)[which(rownames(pam50$centroids)=="KNTC2")]<-"NDC80"
+rownames(pam50$centroids)[which(rownames(pam50$centroids)=="ORC6L")]<-"ORC6"
+
+my_pam50 <- signatures$basic$pam50$gene_name
+
+```
+
+```{r}
+
+
+
+idxs <- c(); missing <- c()
+for (i in 1:length(my_pam50)) {
+   tmp <- which(rownames(VST)==my_pam50[i])
+   if (length(tmp)==0) { missing <- c(missing, my_pam50[i])} else   idxs <- c(idxs, tmp)
+}
+(missing) # nothing missing without filtering
+
+# old code below, adjusting
+
+# we are keeping
+# mat <- X$normalized[idxs,keep] %>% t %>% scale %>% t %>% as.matrix
+mat <- VST %>% t %>% scale %>% t %>% as.matrix
+
+mat <- mat[rownames(pam50$centroids), ]
+hist(mat["ESR1",])
+length(which(mat["ESR1",]>0)) / ncol(mat)
+
+pearson_corr <- matrix(data=NA, nrow=5, ncol=ncol(mat), dimnames=list(colnames(pam50$centroids)))
+spearman_corr <- matrix(data=NA, nrow=5, ncol=ncol(mat), dimnames=list(colnames(pam50$centroids)))
+
+
+for (i in 1:ncol(mat)) {
+   for (j in 1:5) {
+     # loops through the expression of PAM50 genes by individual patient
+     # computes that correlation between the patient and each 
+      pearson_corr[j, i] <- cor(mat[,i], pam50$centroids[,j], method="pearson") 
+      spearman_corr[j, i] <- cor(mat[,i], pam50$centroids[,j], method="spearman") 
+   }
+}
+pearson_subtype <- rownames(pearson_corr)[apply(pearson_corr, MARGIN=2, which.max)]
+spearman_subtype <- rownames(spearman_corr)[apply(spearman_corr, MARGIN=2, which.max)]
+
+
+
+```
+
+# and now we add them to the AnnData structure
+```{r}
+obs_metadata$subtype = pearson_subtype
+obs_metadata$subtype_spearman = spearman_subtype
+
+#adata_gse$obs = obs_metadata
+adata_tmbc$obs = obs_metadata
+
+gse47462_new = "/path/to/third_party/GSE47462_third_party_ffpe/train/GSE47462_19K.Subtype.tau_1.h5ad"
+tmbc_new = "/path/to/third_party/CountMeIn_BC_only_third_party_ffpe/train/gdc_download.CMI_BC_Only_19K.Subtype.tau_1.h5ad"
+
+
+#write_h5ad(adata_gse, filename = gse47462_new)
+write_h5ad(adata_tmbc, filename = tmbc_new)
+
+```
+
+
+Evaluation
+```{r}
+trans = t(expression_matrix)
+
+her2 = trans[which(rownames(trans) == "ERBB2"),]
+her2_normalized = VST[which(rownames(VST)=="ERBB2"),]
+her2_mat = mat[which(rownames(mat)=="ERBB2"),]
+
+par(mfrow = c(1, 2))
+xrange = range(her2_normalized)
+
+# Plot the histograms side-by-side
+hist(her2_normalized[which(pearson_subtype == "Her2")],
+     main = "Her2 Subtype",
+     xlab = "HER2 Normalized",
+     col = "blue",
+     xlim=xrange)
+
+hist(her2_normalized[which(pearson_subtype != "Her2")],
+     main = "Non-Her2 Subtype",
+     xlab = "HER2 Normalized",
+     col = "red",
+     xlim=xrange)
+
+# Plot the histograms side-by-side
+par(mfrow = c(1, 2))
+hist(her2[which(pearson_subtype == "Her2")],
+     main = "Her2 Subtype",
+     xlab = "HER2 Counts",
+     col = "blue",
+     breaks=30)
+
+hist(her2[which(pearson_subtype != "Her2")],
+     main = "Non-Her2 Subtype",
+     xlab = "HER2 Counts",
+     col = "red",
+     breaks =15)
+
+```
+
+
+```{r}
+trans = t(expression_matrix)
+
+esr1 = trans[which(rownames(trans) == "ESR1"),]
+esr1_normalized = VST[which(rownames(VST)=="ESR1"),]
+esr1_mat = mat[which(rownames(mat)=="ESR1"),]
+
+par(mfrow = c(1, 2))
+
+xrange = range(esr1_normalized)
+
+# Plot the histograms side-by-side
+hist(esr1_normalized[which(pearson_subtype == "LumA" | pearson_subtype == "LumB")],
+     main = "LumA/B Subtype",
+     xlab = "ESR1 Normalized",
+     col = "blue",
+     xlim=xrange)
+
+hist(esr1_normalized[which(pearson_subtype == "Her2" | pearson_subtype == "Basal" | pearson_subtype == "Normal")],
+     main = "Non-Lum Subtype",
+     xlab = "ESR1 Normalized",
+     col = "red",
+     xlim=xrange)
+
+# Plot the histograms side-by-side
+par(mfrow = c(1, 2))
+hist(esr1[which(pearson_subtype == "LumA" | pearson_subtype == "LumB")],
+     main = "LumA/B Subtype",
+     xlab = "ESR1 Counts",
+     col = "blue",
+     breaks=30)
+
+hist(esr1[which(pearson_subtype == "Her2" | pearson_subtype == "Basal" | pearson_subtype == "Normal")],
+     main = "Non-Lum Subtype",
+     xlab = "ESR1 Counts",
+     col = "red",
+     breaks =15)
+
+```
+
+
+```
