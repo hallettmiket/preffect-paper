@@ -7,6 +7,10 @@ Generative and integrative modeling for transcriptomics with formalin fixed para
 The manuscript is now available on bioRxiv, and has been susbmitted to a scientific journal for peer review:
 https://www.biorxiv.org/content/10.1101/2025.02.21.639356v1
 
+This repository *does not* contain the implementation of PREFFECT. It only contains code related to 
+the generation of the figures and analyses for the manuscript. The code and documentation is available 
+at https://github.com/hallettmiket/preffect
+
 
 ## Authors
 **Eliseos John Mucaki -**
