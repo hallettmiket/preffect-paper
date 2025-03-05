@@ -2,9 +2,11 @@
 
 ## Description 
 This repository stores the code used to develop the manuscript:
+
 Generative and integrative modeling for transcriptomics with formalin fixed paraffin embedded material
 
 The manuscript is now available on bioRxiv, and has been susbmitted to a scientific journal for peer review:
+
 https://www.biorxiv.org/content/10.1101/2025.02.21.639356v1
 
 
@@ -18,11 +20,11 @@ https://www.biorxiv.org/content/10.1101/2025.02.21.639356v1
 **Aryamaan Saha -**
 *Department of Biological Engineering and Data Science, Indian Institute of Technology, Madras, India*
 
-**S Trabinjac -**
+**Sabina Trabinjac -**
 *Department of Radiation Oncology, Sunnybrook Health Sciences Centre
 Department of Laboratory Medicine and Pathobiology, University of Toronto Toronto, Canada*
 
-**Sharon Nofech-Moses -**
+**Sharon Nofech-Mozes -**
 *Department of Anatomic Pathology, Sunnybrook Health Sciences Centre*
 *Department of Laboratory Medicine and Pathobiology, University of Toronto, Toronto, Canada*
 
@@ -39,7 +41,7 @@ Department of Laboratory Medicine and Pathobiology, University of Toronto Toront
 Contact: [Mike Hallett](mailto:michael.hallett@uwo.ca)
 
 
-## Software (PREFFECT - PaRaffin Embedded Formalin-FixEd FixEd Cleaning Tool)
+## PPREFFECT - PaRaffin Embedded Formalin-FixEd FixEd Cleaning Tool
 PREFFECT software (developed in this study) can be found here:
 https://github.com/hallettmiket/preffect/
 
